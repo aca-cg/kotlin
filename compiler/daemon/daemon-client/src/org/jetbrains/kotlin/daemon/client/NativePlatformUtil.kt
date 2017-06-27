@@ -16,13 +16,17 @@
 
 package org.jetbrains.kotlin.daemon.client
 
+import net.rubygrapefruit.platform.ProcessLauncher
 import org.jetbrains.kotlin.daemon.common.DaemonReportCategory
 import java.io.IOException
 
 private class NativePlatformLauncherWrapper {
+    private val nativeLauncher: ProcessLauncher by lazy {
+        net.rubygrapefruit.platform.Native.get(net.rubygrapefruit.platform.ProcessLauncher::class.java)
+    }
+
     fun launch(processBuilder: ProcessBuilder): Process =
             try {
-                val nativeLauncher = net.rubygrapefruit.platform.Native.get(net.rubygrapefruit.platform.ProcessLauncher::class.java)
                 nativeLauncher.start(processBuilder)
             }
             catch (e: net.rubygrapefruit.platform.NativeException) {
@@ -34,6 +38,10 @@ private class NativePlatformLauncherWrapper {
 fun launchProcessWithFallback(processBuilder: ProcessBuilder, reportingTargets: DaemonReportingTargets, reportingSource: String = "process launcher"): Process =
         try {
             NativePlatformLauncherWrapper().launch(processBuilder)
+        }
+        catch (e: UnsatisfiedLinkError) {
+            reportingTargets.report(DaemonReportCategory.DEBUG, "Could not start process with native process launcher, falling back to ProcessBuilder#start ($e")
+            throw e
         }
         catch (e: IOException) {
             reportingTargets.report(DaemonReportCategory.DEBUG, "Could not start process with native process launcher, falling back to ProcessBuilder#start (${e.cause})")
