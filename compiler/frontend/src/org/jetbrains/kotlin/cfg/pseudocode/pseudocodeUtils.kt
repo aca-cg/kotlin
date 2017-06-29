@@ -115,8 +115,8 @@ fun getExpectedTypePredicate(
                     TracingStrategy.EMPTY,
                     DataFlowInfoForArgumentsImpl(DataFlowInfo.EMPTY, call)
             )
-            val status = ValueArgumentsToParametersMapper.mapValueArgumentsToParameters(call, TracingStrategy.EMPTY, candidateCall)
-            if (!status.isSuccess) continue
+            val hasErrorStatus = ValueArgumentsToParametersMapper.mapValueArgumentsToParameters(call, TracingStrategy.EMPTY, candidateCall)
+            if (hasErrorStatus) continue
 
             val candidateArgumentMap = candidateCall.valueArguments
             val callArguments = call.valueArguments

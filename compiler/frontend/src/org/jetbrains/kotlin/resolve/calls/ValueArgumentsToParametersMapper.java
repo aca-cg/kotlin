@@ -42,32 +42,10 @@ import java.util.Set;
 import static org.jetbrains.kotlin.diagnostics.Errors.*;
 import static org.jetbrains.kotlin.diagnostics.Errors.BadNamedArgumentsTarget.*;
 import static org.jetbrains.kotlin.resolve.BindingContext.REFERENCE_TARGET;
-import static org.jetbrains.kotlin.resolve.calls.ValueArgumentsToParametersMapper.Status.*;
 
 public class ValueArgumentsToParametersMapper {
 
-    public enum Status {
-        ERROR(false),
-        WEAK_ERROR(false),
-        OK(true);
-
-        private final boolean success;
-
-        Status(boolean success) {
-            this.success = success;
-        }
-
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public Status compose(Status other) {
-            if (this == ERROR || other == ERROR) return ERROR;
-            if (this == WEAK_ERROR || other == WEAK_ERROR) return WEAK_ERROR;
-            return this;
-        }
-    }
-    public static <D extends CallableDescriptor> Status mapValueArgumentsToParameters(
+    public static <D extends CallableDescriptor> boolean mapValueArgumentsToParameters(
             @NotNull Call call,
             @NotNull TracingStrategy tracing,
             @NotNull MutableResolvedCall<D> candidateCall
@@ -75,7 +53,7 @@ public class ValueArgumentsToParametersMapper {
         //return new ValueArgumentsToParametersMapper().process(call, tracing, candidateCall, unmappedArguments);
         Processor<D> processor = new Processor<>(call, candidateCall, tracing);
         processor.process();
-        return processor.status;
+        return processor.hasError;
     }
 
     private static class Processor<D extends CallableDescriptor> {
@@ -90,7 +68,7 @@ public class ValueArgumentsToParametersMapper {
         private final Set<ValueArgument> unmappedArguments = Sets.newHashSet();
         private final Map<ValueParameterDescriptor, VarargValueArgument> varargs = Maps.newHashMap();
         private final Set<ValueParameterDescriptor> usedParameters = Sets.newHashSet();
-        private Status status = OK;
+        private boolean hasError = false;
 
         private Processor(@NotNull Call call, @NotNull MutableResolvedCall<D> candidateCall, @NotNull TracingStrategy tracing) {
             this.call = call;
@@ -165,7 +143,7 @@ public class ValueArgumentsToParametersMapper {
                 else {
                     report(TOO_MANY_ARGUMENTS.on(argument.asElement(), candidateCall.getCandidateDescriptor()));
                     unmappedArguments.add(argument);
-                    setStatus(WEAK_ERROR);
+                    setErrorStatus();
                 }
             }
         };
@@ -219,7 +197,7 @@ public class ValueArgumentsToParametersMapper {
                         report(NAMED_PARAMETER_NOT_FOUND.on(nameReference, nameReference));
                     }
                     unmappedArguments.add(argument);
-                    setStatus(WEAK_ERROR);
+                    setErrorStatus();
                 }
                 else {
                     if (nameReference != null) {
@@ -230,7 +208,7 @@ public class ValueArgumentsToParametersMapper {
                             report(ARGUMENT_PASSED_TWICE.on(nameReference));
                         }
                         unmappedArguments.add(argument);
-                        setStatus(WEAK_ERROR);
+                        setErrorStatus();
                     }
                     else {
                         putVararg(valueParameterDescriptor, argument);
@@ -243,7 +221,7 @@ public class ValueArgumentsToParametersMapper {
             @Override
             public ProcessorState processPositionedArgument(@NotNull ValueArgument argument) {
                 report(MIXING_NAMED_AND_POSITIONED_ARGUMENTS.on(argument.asElement()));
-                setStatus(WEAK_ERROR);
+                setErrorStatus();
                 unmappedArguments.add(argument);
 
                 return positionedThenNamed;
@@ -289,17 +267,17 @@ public class ValueArgumentsToParametersMapper {
 
             if (parameters.isEmpty()) {
                 report(TOO_MANY_ARGUMENTS.on(possiblyLabeledFunctionLiteral, candidateCall.getCandidateDescriptor()));
-                setStatus(ERROR);
+                setErrorStatus();
             }
             else {
                 ValueParameterDescriptor lastParameter = CollectionsKt.last(parameters);
                 if (lastParameter.getVarargElementType() != null) {
                     report(VARARG_OUTSIDE_PARENTHESES.on(possiblyLabeledFunctionLiteral));
-                    setStatus(ERROR);
+                    setErrorStatus();
                 }
                 else if (!usedParameters.add(lastParameter)) {
                     report(TOO_MANY_ARGUMENTS.on(possiblyLabeledFunctionLiteral, candidateCall.getCandidateDescriptor()));
-                    setStatus(WEAK_ERROR);
+                    setErrorStatus();
                 }
                 else {
                     putVararg(lastParameter, lambdaArgument);
@@ -309,7 +287,7 @@ public class ValueArgumentsToParametersMapper {
             for (int i = 1; i < functionLiteralArguments.size(); i++) {
                 KtExpression argument = functionLiteralArguments.get(i).getArgumentExpression();
                 report(MANY_LAMBDA_EXPRESSION_ARGUMENTS.on(argument));
-                setStatus(WEAK_ERROR);
+                setErrorStatus();
             }
         }
 
@@ -324,7 +302,7 @@ public class ValueArgumentsToParametersMapper {
                     }
                     else {
                         tracing.noValueForParameter(candidateCall.getTrace(), valueParameter);
-                        setStatus(ERROR);
+                        setErrorStatus();
                     }
                 }
             }
@@ -339,15 +317,15 @@ public class ValueArgumentsToParametersMapper {
                 LeafPsiElement spread = valueArgument.getSpreadElement();
                 if (spread != null) {
                     candidateCall.getTrace().report(NON_VARARG_SPREAD.on(spread));
-                    setStatus(WEAK_ERROR);
+                    setErrorStatus();
                 }
                 ResolvedValueArgument argument = new ExpressionValueArgument(valueArgument);
                 candidateCall.recordValueArgument(valueParameterDescriptor, argument);
             }
         }
 
-        private void setStatus(@NotNull Status newStatus) {
-            status = status.compose(newStatus);
+        private void setErrorStatus() {
+            hasError = true;
         }
 
         private void report(Diagnostic diagnostic) {
