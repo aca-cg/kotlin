@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2016 JetBrains s.r.o.
+ * Copyright 2010-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,6 +76,11 @@ object Renderers {
 
     @JvmField val NAME = Renderer<Named> { it.name.asString() }
 
+    @JvmField val NAME_OR_KIND_FOR_DEFAULT_CONSTRUCTOR = Renderer<DeclarationDescriptor> {
+        val originalName = it.name
+        if (originalName.isSpecial && it is ConstructorDescriptor) "constructor" else originalName.asString()
+    }
+
     @JvmField val PLATFORM = Renderer<ModuleDescriptor> {
         val platform = it.getMultiTargetPlatform()
         " ${it.getCapability(ModuleInfo.Capability)?.displayedName ?: ""}" + when (platform) {
@@ -107,12 +112,14 @@ object Renderers {
         "$declarationKindWithSpace'${it.name.asString()}'"
     }
 
-    @JvmField val NAME_OF_PARENT_OR_FILE = Renderer<DeclarationDescriptor> {
-        if (DescriptorUtils.isTopLevelDeclaration(it) && it is DeclarationDescriptorWithVisibility && it.visibility == Visibilities.PRIVATE) {
+    @JvmField val NAME_OF_PARENT_WITH_KIND_OR_FILE = ContextDependentRenderer<DeclarationDescriptor> { descriptor, context ->
+        if (DescriptorUtils.isTopLevelDeclaration(descriptor) &&
+            descriptor is DeclarationDescriptorWithVisibility &&
+            descriptor.visibility == Visibilities.PRIVATE) {
             "file"
         }
         else {
-            "'" + it.containingDeclaration!!.name + "'"
+            DECLARATION_NAME_WITH_KIND.render(descriptor.containingDeclaration!!, context)
         }
     }
 
